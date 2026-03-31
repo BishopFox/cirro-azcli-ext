@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check version change
+        id: version
+        run: |
+          NEW_VERSION=$(grep '^version' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
+          OLD_VERSION=$(git show HEAD~1:pyproject.toml 2>/dev/null | grep '^version' | sed 's/.*"\(.*\)".*/\1/' || echo "")
+
+          if ! echo "$NEW_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9.+-]*)?$'; then
+            echo "::error::Invalid version format: $NEW_VERSION"
+            exit 1
+          fi
+
+          echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$NEW_VERSION" != "$OLD_VERSION" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check tag does not exist
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          TAG="v${{ steps.version.outputs.new }}"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+
+      - name: Install uv
+        if: steps.version.outputs.changed == 'true'
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build wheel
+        if: steps.version.outputs.changed == 'true'
+        run: uv build --wheel
+
+      - name: Generate checksums
+        if: steps.version.outputs.changed == 'true'
+        run: sha256sum dist/*.whl > dist/SHA256SUMS
+
+      - name: Attest build provenance
+        if: steps.version.outputs.changed == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/*.whl
+
+      - name: Create tag and release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="v${{ steps.version.outputs.new }}"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" dist/*.whl dist/SHA256SUMS \
+            --title "$VERSION" \
+            --generate-notes
