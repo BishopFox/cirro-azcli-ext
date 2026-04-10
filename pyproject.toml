@@ -5,7 +5,7 @@ description = "Azure CLI extension that passively monitors Azure CLI commands an
 name = "cirro-azcli-ext"
 readme = "README.md"
 requires-python = ">=3.9"
-version = "1.0.0"
+version = "1.0.1"
 
 [build-system]
 build-backend = "setuptools.build_meta"
