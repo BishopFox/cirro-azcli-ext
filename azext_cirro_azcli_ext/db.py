@@ -84,7 +84,7 @@ def _keyvault_item_row(item):
     return (
         item_id,
         _classify_keyvault_resource_type(item_id),
-        json.dumps(item).encode("utf-8"),
+        json.dumps(item),
     )
 
 
